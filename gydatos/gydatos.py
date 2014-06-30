@@ -1116,6 +1116,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 		N          = nsamp
 		directory  = values[15]
 		dfile      = values[16]
+		datatype   = values[13]
 		num_samp=0
 
 	#   	
@@ -1152,7 +1153,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 	      
 			
 			
-			readwfm = readNpoints(f,foff,N,verbose)
+			readwfm = readNpoints(f,foff,N,verbose,datatype)
 			for i in range(N):
 				wfm[i]=readwfm[i]
 			start_time = start_epoch
@@ -1169,7 +1170,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 				print ("Reading", N, "samples",(N-1)/srate," seconds",'\n')
 				print ("Tuple Start Time=", tuptime,'\n', "Tuple End Time=",tupendtime,'\n')
 				print ("start_epoch=", start_epoch, "end_epoch=", end_epoch)
-			readwfm = readNpoints(f,foff,N,verbose)
+			readwfm = readNpoints(f,foff,N,verbose,datatype)
 			for i in range(N):
 				wfm[i] = readwfm[i]
 			continue
@@ -1192,7 +1193,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 			if (verbose > 1):
 				print ("Reading", N, "samples",(N-1)/srate," seconds",'\n')
 			start_time = tuptime
-			readwfm = readNpoints(f,foff,N,verbose)
+			readwfm = readNpoints(f,foff,N,verbose,datatype)
 			start_samp = int(srate*(tuptime-start_epoch))
 			for i in range (N):
 				wfm[start_samp+i] = readwfm[i]
@@ -1225,7 +1226,14 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 	return srate, start_time, num_samp 
 
 
-def readNpoints(f, foff, N, verbose):
+def sext24(d):
+	if ord(d[2]) & 0x80:
+		return d+'\xff'
+	else:
+		return d+'\x00' 
+
+
+def readNpoints(f, foff, N, verbose, datatype):
 	'''
 	Read N points from file at offset foff 
 	Does the unpacking of the 4 byte string into two byte integers
@@ -1254,15 +1262,23 @@ def readNpoints(f, foff, N, verbose):
    
 	
 	for i in range(N) :
-		ndstring = f.read(4)
-		ndbyte = np.ndarray(shape = (2,), dtype='>i2', buffer=ndstring)
-		if verbose > 3:
-			print (ndbyte[0], ndbyte[1])
-		wfm[i]=float(ndbyte[1])		
-
-		if verbose > 3:
-			print ("Sample", i, wfm[i-1], "\n")
-	
+		if(datatype == 's4'):
+			ndstring = f.read(4)
+			ndbyte = np.ndarray(shape = (2,), dtype='>i2', buffer=ndstring)
+			if verbose > 3:
+				print (ndbyte[0], ndbyte[1])
+			wfm[i] = float(ndbyte[1])		
+			if verbose > 3:
+				print ("Sample", i, wfm[i-1], "\n")
+		if(datatype == 's3'):
+			ndstring = f.read(3)
+			ndbyte = sext24(ndstring)
+			upack = struct.unpack(">%sl" % 1 , ndbyte) 
+			if verbose > 3:
+				print (upack[0])
+			wfm[i]=float(upack[0])		
+			if verbose > 3:
+				print ("Sample", i, wfm[i-1], "\n")
 	return wfm
 
 def WriteSoundFile(sound, prefix, samprate, N):
