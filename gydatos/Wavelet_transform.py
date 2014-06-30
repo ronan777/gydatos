@@ -154,15 +154,13 @@ start_time  = config.get('time_interval','start_time')
 end_time    = config.get('time_interval','end_time')
 time_format = config.get('time_interval','format')
 time_interval = config.getfloat('time_interval','time_interval') 
-
+station1 = config.get('time_interval','Station') 
 
 # station = config.get('time_interval','Station')
 
 triad = config.get('Correlation','Triad')
 
-station1 = triad+'1'
-station2 = triad+'2'
-station3 = triad+'3'
+
 
 correlate = config.getboolean('Correlation','correlation')
 sta_master   = config.get('Correlation','station_master')
@@ -180,6 +178,7 @@ whole_series_spectrum = config.getboolean('Filter','whole_series_spectrum')
 start_level = config.getint('Filter','start_level')
 wlt_type = config.get('Filter','wavelet_type')
 wlt_side = config.get('Filter','wavelet_side')
+add_levels = config.get('Filter','wavelet_add')
 plot_wavelet = config.getboolean('Filter','plot_wavelet')
 
 snr = config.getfloat('Detect','snr')
@@ -238,10 +237,10 @@ if verbose > 1:
 
 master_wf = array('f',[])
 wf1=array('f',[])
-wf2=array('f',[])
-wf3=array('f',[])
+
 cc = array('f',[])
 tt = array('f',[])
+add = array('f',[])
 dt1max, dt2max = gy.CompmaxDt(sfile,triad)
 
 srate=gy.ReadSrate(wfdisc, station1, verbose)
@@ -252,10 +251,7 @@ samprate, start_master_wf, num_master = gy.ReadWfm(master_wf, wfdisc, start_mast
 
 for i in range(1+int(time_interval*samprate)):
 		wf1.append(0.)
-for i in range(1+int(time_interval*samprate)):
-		wf2.append(0.)
-for i in range(1+int(time_interval*samprate)):
-		wf3.append(0.)		
+	
 #
 # Loop over interval defined by variable time_interval
 #
@@ -267,8 +263,6 @@ for time_int in xrange(num_intervals):
 
 	label = fm.format('{0}', time_int)	
 
-
-
 	end_e = start_e + time_interval
 	lab_time=time.gmtime(start_e)
 	pr_time = time.strftime(time_format, lab_time)
@@ -277,8 +271,6 @@ for time_int in xrange(num_intervals):
 	print(figurename)
 
 	samprate, start_wf1, num_samp1 = gy.ReadWfm(wf1, wfdisc, start_e, end_e, station1, verbose)
-	samprate, start_wf2, num_samp2 = gy.ReadWfm(wf2, wfdisc, start_e, end_e, station2, verbose)
-	samprate, start_wf3, num_samp3 = gy.ReadWfm(wf3, wfdisc, start_e, end_e, station3, verbose)
 	
 	#
 	# Pad with zeroes until length reaches the next power of two
@@ -298,22 +290,24 @@ for time_int in xrange(num_intervals):
 		len2 = wlt.dwt_max_level(N, w.dec_len)
 		print(N, 'swt:',len1,'dwt:',len2,len3,n1)
 		n += 1
+	for i in range(N):
+		add.append(0.)	
 	start_e += time_interval
+	for i in range(N) :
+		tt.append((float(i)/samprate))
 	if (test_case):
 		d1,d2 = gy.ReadSite(sfile, triad, 0)
 		theta1 = (theta1+90.)*np.pi/180.
 		dt1,dt2 = gy.CompDt(d1,d2,theta1,1.48)
 		for i in xrange (len(wf1)):
 			wf1[i] = noise_level*np.random.random_sample()
-			wf2[i] = noise_level*np.random.random_sample()
-			wf3[i] = noise_level*np.random.random_sample()
+			
 	#
 	# Replace traces with boxcar in the middle of the trace 
 	#
 		for i in xrange(int(boxcar*samprate)):
 			wf1[len(wf1)/2-int(boxcar*samprate/2)+i] += 1.
-			wf2[len(wf2)/2-int(boxcar*samprate/2)+i+int(dt1*samprate)] += 1.
-			wf3[len(wf3)/2-int(boxcar*samprate/2)+i+int(dt2*samprate)] += 1.
+			
 	
 	if(whole_series_spectrum):
 				
@@ -324,24 +318,24 @@ for time_int in xrange(num_intervals):
 		[(cA7, cD7),(cA6, cD6),(cA5, cD5),(cA4, cD4),(cA3, cD3),(cA2, cD2), (cA1, cD1)] = wlt.swt(wf1, wlt_type, 7, start_level=start_level)
 			
 		if(plot_wavelet):
-			figfft = plt.figure(figsize=(10,6))
+			figwvlt = plt.figure(figsize=(10,6))
 			ax1=plt.subplot(711)
 			plt.title(label)
 			if(wlt_side == 'psi'):
-				print('psi',start_level)
-				plt.plot(cD7)
+				print('psi',start_level,int(add_levels[0]))
+				plt.plot(tt,cD7)
 				plt.subplot(712, sharex=ax1)
-				plt.plot(cD6)
+				plt.plot(tt,cD6)
 				plt.subplot(713, sharex=ax1)
-				plt.plot(cD5)
+				plt.plot(tt,cD5)
 				plt.subplot(714, sharex=ax1)
-				plt.plot(cD4)
+				plt.plot(tt,cD4)
 				plt.subplot(715, sharex=ax1)
-				plt.plot(cD3)
+				plt.plot(tt,cD3)
 				plt.subplot(716, sharex=ax1)
-				plt.plot(cD2)
+				plt.plot(tt,cD2)
 				plt.subplot(717, sharex=ax1)
-				plt.plot(cD1)
+				plt.plot(tt,cD1)
 			if(wlt_side == 'phi'):
 				plt.plot(cA7)
 				plt.subplot(712, sharex=ax1)
@@ -356,6 +350,42 @@ for time_int in xrange(num_intervals):
 				plt.plot(cA2)
 				plt.subplot(717, sharex=ax1)
 				plt.plot(cA1)
+			plt.show()
+		if(len(add_levels) > 0):
+			figadd = plt.figure(figsize=(10,6))
+			ax1=plt.subplot(111)
+			plt.title(label)
+			for level in range(len(add_levels)):
+				print("Level",add_levels[level])
+				if(int(add_levels[level]) == 0):
+					print("Adding cD7")		
+					for i in range(N):
+						add[i] += cD7[i]
+				if(int(add_levels[level]) == 1):
+					print("Adding cD6")		
+					for i in range(N):
+						add[i] += cD6[i]
+				if(int(add_levels[level]) == 2):
+					print("Adding cD5")		
+					for i in range(N):
+						add[i] += cD5[i]
+				if(int(add_levels[level]) == 3):
+					print("Adding cD4")		
+					for i in range(N):
+						add[i] += cD4[i]
+				if(int(add_levels[level]) == 4):
+					print("Adding cD3")		
+					for i in range(N):
+						add[i] += cD3[i]
+				if(int(add_levels[level]) == 5):
+					print("Adding cD2")		
+					for i in range(N):
+						add[i] += cD2[i]
+				if(int(add_levels[level]) == 6):
+					print("Adding cD1")		
+					for i in range(N):
+						add[i] += cD1[i]
+			plt.plot(tt,add)
 			plt.show()
 	if(plot_crossco):
 		if(envelope):
