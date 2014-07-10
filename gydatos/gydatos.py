@@ -1143,15 +1143,16 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 # All the requested waveform is included in this tuple.
 
 			num_samp = int((start_epoch-tuptime)* srate)
-			foff = foff + 4*num_samp
+			if(datatype == 's4'):
+				foff = foff + 4*num_samp
+			if(datatype == 's3'):
+				foff = foff + 3*num_samp
 			if (verbose > 1):
 				print ("All requested Waveform in tuple:", wfid,"station:",station,'\n')
 				print ("Reading", N, "samples",(N-1)/srate," seconds",'\n') 
 				print ("Tuple Start Time = ", tuptime,'\n', "Tuple End Time = ",tupendtime,'\n')
 				print ("start_epoch = ", start_epoch, "end_epoch = ", end_epoch)
-				print ("Offset = ", foff+4*num_samp)
-	      
-			
+				print ("Offset = ", foff)		
 			
 			readwfm = readNpoints(f,foff,N,verbose,datatype)
 			for i in range(N):
@@ -1163,7 +1164,10 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 
 		    # The beginning of the waveform is in this tuple.
 			num_samp = int((start_epoch-tuptime)* srate)
-			foff = foff + 4*num_samp
+			if(datatype == 's4'):
+				foff = foff + 4*num_samp
+			if(datatype == 's3'):
+				foff = foff + 3*num_samp
 			N = int((tupendtime-start_epoch)*srate) 
 			if (verbose > 1):
 				print ("Beginning of Waveform in tuple:", wfid,"station:",station,'\n')
