@@ -35,12 +35,21 @@ import matplotlib.cm as cm
 fm = string.Formatter()
 
 Site = collections.namedtuple('Site', ['sta','lat','lon'], verbose=True)
-Detection = collections.namedtuple('Detection',
-['sta','Det_num','time','dt_cc','duration','freq','whale_disc','pow_15_25','pow_30_50','pow_50_60','spectim'], 
-verbose=True)
+
+#Detection = collections.namedtuple('Detection',
+#['sta','Det_num','time','dt_cc','duration','freq','snr','whale_disc','reclev','pow_15_25','pow_30_50','pow_50_60','spectim'], 
+#verbose=True)
+
 KMperDEG = 111.32
 LARGE = 9999999.
 epsilon = 0.001
+
+
+
+
+
+
+
 
 
 def CheckFreqRatio(signal,samprate,frange,ratio):
@@ -57,13 +66,13 @@ def CheckFreqRatio(signal,samprate,frange,ratio):
 				
 		if (freqs[f] > frange[0] and freqs[f] < frange[1]) :
 			nf1 += 1
-			band1 += fft1[f]
+			band1 += fft1[f]/samprate
 		if (freqs[f] > frange[2] and freqs[f] < frange[3]) :
 			nf2 += 1
-			band2 += fft1[f]
+			band2 += fft1[f]/samprate
 		if (freqs[f] > frange[4] and freqs[f] < frange[5]) :
 			nf3 += 1
-			band3 += fft1[f]
+			band3 += fft1[f]/samprate
 	band1 /= float(nf1)
 	band2 /= float(nf2)
 	band3 /= float(nf3)
@@ -876,11 +885,29 @@ def TimeOfMax(w):
 			maxindex=i
 	return maxindex
 
-def MakeDetect(Det, w, snr, samprate, t_group, sta, shift):
+
+def ReceivedLevel(w, det, samprate, t_group):
+	
+	ndet = len(det)
+	N = int(samprate*t_group)
+	for i in range(ndet):
+		k = int(det[i].time * samprate)
+		rlev1 = 0.
+		for j in range(N):
+			if((k+j) < len(w)):
+				rlev1 += w[k+j]*w[k+j]
+		rlev1 = rlev1/float(N)
+		lrlev =	10.* math.log10(rlev1)
+		print(lrlev,'\n')
+		det[i]._replace(reclev=10.)
+		print(det,'\n\n')
+				
+def MakeDetect(Det, w, flt, snr, samprate, t_group, sta, shift):
 	det = []
 	spectim=[]
 	init=0
 	det_num=0
+	N = int(samprate*t_group)
 	for i in range(1,len(w)):
 		t0=float(i)/samprate
 		if(w[i] >= snr and w[i] > w[i-1] and init==0):
@@ -889,13 +916,24 @@ def MakeDetect(Det, w, snr, samprate, t_group, sta, shift):
 			if dw != 0. :
 				t = t0+shift+dw/samprate
 			ndet = len(det)
-#			print "ndet", ndet, det
+#			
+			detsnr = w[i]
+			rlev1 = 0.
+			for k in range(N):
+				
+				if((k+i) < len(w) and w[i+k] > detsnr):
+					detsnr = w[i+k]		
+				if((k+i) < len(flt)):
+					rlev1 += flt[k+i]*flt[k+i]
+
+			rlev1 = rlev1/float(N)
+			lrlev =	10.* math.log10(rlev1)
 			if((ndet==0) or (ndet > 0 and (t-det[ndet-1].time) > t_group)):
-				newdet=[sta,det_num,t,0.,0.,0.,False,0.,0.,0.,spectim]
+				newdet=[sta,det_num,t,0.,0.,0.,detsnr,False,lrlev,0.,0.,0.,spectim]
 				det_num+=1
 				print (t0, w[i-1], w[i])
 				print (newdet,'\n')
-				det.append(Detection._make(newdet))	
+				det.append(Det._make(newdet))	
 		if(w[i] < snr ):
 			init=0	
 	
@@ -924,22 +962,26 @@ def CompStaLta (L_ta, S_ta, samprate, w):
 	Sshift = int(S_ta*samprate)
 	L_length = float(L_ta*samprate)
 	S_length = float(S_ta*samprate)
+	rat = L_ta/S_ta
 	for j in range(Lshift):
 		Lta += W[j]
-		if j > (Lshift-Sshift):
-			Sta += W[j]
-
-	Lta = Lta / L_length
-	Sta = Sta / S_length
+	for j in range(Sshift):
+		Sta += W[j+Lshift-Sshift]
 	
-	StaLta.append(Sta/Lta)
+	StaLta.append(rat*Sta/Lta)
+	Lta1 = Lta
+#	StaLta.append(1.)
 	j=0
-	while j <  (len(w)-Lshift):	 
-		Lta = Lta+(W[Lshift+j] - W[j])/L_length
-		Sta = Sta+(W[Lshift+j] - W[j+Lshift-Sshift+1])/S_length 
-		StaLta.append(Sta/Lta)
-		if(Sta/Lta < 0.) :
-			print("Warning !! negative STA - LTA ratio",j, Sta,Lta)
+	while j <  (len(w)-Lshift):	
+# 
+		Lta = Lta+(W[Lshift+j] - W[j])
+#		
+		Sta = Sta+(W[Lshift+j] - W[j+Lshift-Sshift]) 
+#		
+		StaLta.append(rat*Sta/Lta)
+#		
+		if(Sta < 0. or Lta < 0.) :
+			print("Warning !! negative STA or LTA", len(w) , Lshift, Sshift, Sta, Lta, j)
 		j+=1
 	del W
 	return StaLta
@@ -1112,6 +1154,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 		nsamp      = int(values[7])
 		wfid       = int(values[3])
 		srate      = float(values[8])
+		calib      = float(values[9])
 		nint       = 1+int((end_epoch - start_epoch)*srate)
 		N          = nsamp
 		directory  = values[15]
@@ -1156,7 +1199,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 			
 			readwfm = readNpoints(f,foff,N,verbose,datatype)
 			for i in range(N):
-				wfm[i]=readwfm[i]
+				wfm[i]=readwfm[i]*calib
 			start_time = start_epoch
 			break	
 
@@ -1176,7 +1219,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 				print ("start_epoch=", start_epoch, "end_epoch=", end_epoch)
 			readwfm = readNpoints(f,foff,N,verbose,datatype)
 			for i in range(N):
-				wfm[i] = readwfm[i]
+				wfm[i] = readwfm[i]*calib
 			continue
 	
 		if  start_epoch < tuptime and end_epoch >= tuptime:
@@ -1200,7 +1243,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 			readwfm = readNpoints(f,foff,N,verbose,datatype)
 			start_samp = int(srate*(tuptime-start_epoch))
 			for i in range (N):
-				wfm[start_samp+i] = readwfm[i]
+				wfm[start_samp+i] = readwfm[i]*calib
 
 		f.close()
 	fwd.close()
@@ -1227,7 +1270,7 @@ def ReadWfm(wfm, wfdisc, start_epoch, end_epoch, station, verbose):
 	for i in range (len(wfm)):
 		wfm[i] = wfm[i]-avg
 
-	return srate, start_time, num_samp 
+	return srate, start_time, N 
 
 
 def sext24(d):

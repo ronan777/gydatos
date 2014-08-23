@@ -46,7 +46,7 @@ import gydatos as gy
 import pywt as wlt
 
 Detection = collections.namedtuple('Detection',
-['sta','Det_num','time','dt_cc','duration','freq','whale_disc','pow_15_25','pow_30_50','pow_50_60','spectim'], 
+['sta','Det_num','time','dt_cc','duration','freq','snr','whale_disc','reclev','pow_15_25','pow_30_50','pow_50_60','spectim'], 
 verbose=True)
 Hydro_Group = collections.namedtuple('HAG',['triad','HAG_num','whale_disc','Det1','Det2','Det3','direction','absfit','direction_cc','relfit','direction_stk','stkfit'], 
 verbose=True)
@@ -112,30 +112,31 @@ def HydroGroupForm(sfile, triad, det1, det2, det3, plot_detect):
 	return hag	
 	
 
-def MakeDetect(Det, w, snr, samprate, t_group, sta, shift):
-	det = []
-	spectim=[]
-	init=0
-	det_num=0
-	for i in range(1,len(w)):
-		t0=float(i)/samprate
-		if(w[i] >= snr and w[i] > w[i-1] and init==0):
-			init=1
-			dw = (snr-w[i-1])/(w[i]-w[i-1])
-			if dw != 0. :
-				t = t0+shift+dw/samprate
-			ndet = len(det)
+#def MakeDetect(Det, w, snr, samprate, t_group, sta, shift):
+
+#	det = []
+#	spectim=[]
+#	init=0
+#	det_num=0
+#	for i in range(1,len(w)):
+#		t0=float(i)/samprate
+#		if(w[i] >= snr and w[i] > w[i-1] and init==0):
+#			init=1
+#			dw = (snr-w[i-1])/(w[i]-w[i-1])
+#			if dw != 0. :
+#				t = t0+shift+dw/samprate
+#			ndet = len(det)
 #			print "ndet", ndet, det
-			if((ndet==0) or (ndet > 0 and (t-det[ndet-1].time) > t_group)):
-				newdet=[sta,det_num,t,0.,0.,0.,False,0.,0.,0.,spectim]
-				det_num+=1
-				print (t0, w[i-1], w[i])
-				print (newdet,'\n')
-				det.append(Detection._make(newdet))	
-		if(w[i] < snr ):
-			init=0	
-	
-	return det		
+#			if((ndet==0) or (ndet > 0 and (t-det[ndet-1].time) > t_group)):
+#				newdet=[sta,det_num,t,0.,0.,0.,False,0.,0.,0.,spectim]
+#				det_num+=1
+#				print (t0, w[i-1], w[i])
+#				print (newdet,'\n')
+#				det.append(Detection._make(newdet))	
+#		if(w[i] < snr ):
+#			init=0	
+#	
+#	return det		
 
 
 
@@ -194,13 +195,12 @@ envelope = config.getboolean('Filter','envelope')
 whole_series_spectrum = config.getboolean('Filter','whole_series_spectrum')
 band_pass = config.getboolean('Filter','band_pass')
 wavelet_transform = config.getboolean('Filter','wavelet_transform')
-level1_psi = config.getboolean('Filter','level1_psi')
-level1_phi = config.getboolean('Filter','level1_phi')
-level2_psi = config.getboolean('Filter','level2_psi')
-level2_phi = config.getboolean('Filter','level2_phi')
-level3_psi = config.getboolean('Filter','level3_psi')
-level3_phi = config.getboolean('Filter','level3_phi')
+level_psi = config.getboolean('Filter','level_psi')
+level_phi = config.getboolean('Filter','level_phi')
+
 wlt_type = config.get('Filter','wavelet_type')
+wlt_side = config.get('Filter','wavelet_side')
+add_levels = config.get('Filter','wavelet_add')
 start_level = config.getint('Filter','start_level')
 
 snr = config.getfloat('Detect','snr')
@@ -262,6 +262,9 @@ master_wf = array('f',[])
 wf1=array('f',[])
 wf2=array('f',[])
 wf3=array('f',[])
+add1 = array('f',[])
+add2 = array('f',[])
+add3 = array('f',[])
 dt1max, dt2max = gy.CompmaxDt(sfile,triad)
 
 srate=gy.ReadSrate(wfdisc, station1, verbose)
@@ -325,7 +328,7 @@ for time_int in xrange(num_intervals):
 	if(whole_series_spectrum):
 		figfft = plt.figure(figsize=(10,6))
 		subf1 = figfft.add_subplot(1,1,1)	
-	        fft1 = abs(scipy.fft(wf1))
+	        fft1 = abs(scipy.fft(wf1))/samprate
 		freqs = scipy.fftpack.fftfreq(len(wf1),1./samprate)		
 		label = 'Spectrum '+pr_time
 		print(label)
@@ -348,6 +351,7 @@ for time_int in xrange(num_intervals):
 		print ("Filtered 2, length:", len(wf2))
 		fltwf3 = scipy.signal.lfilter(b, a, wf3)
 		print ("Filtered 3, length:", len(wf3))
+		n1 = len(wf1)
 	elif(wavelet_transform):
 		w = wlt.Wavelet(wlt_type)
 		N=1
@@ -364,105 +368,125 @@ for time_int in xrange(num_intervals):
 			len3 = wlt.swt_max_level(n1)
 			len2 = wlt.dwt_max_level(N, w.dec_len)
 			print(N, 'swt:',len1,'dwt:',len2,len3,n1)
-			n += 1	
+			n += 1		
+		for i in range(N):
+			add1.append(0.)
+			add2.append(0.)
+			add3.append(0.)
+
 		[(cA7, cD7),(cA6, cD6),(cA5, cD5),(cA4, cD4),(cA3, cD3),(cA2, cD2), (cA1, cD1)] = wlt.swt(wf1, wlt_type, 7, start_level=start_level)
-		fltwf1=0		
-		if(level1_psi):
-			fltwf1 = cD1
-			print('Using high-frequency side')
-		if(level2_psi):
-			if(fltwf1):
-				fltwf1 += cD2
-			else:
-				fltwf1 = cD2
-		if(level3_psi):
-			fltwf1 += cD3
-		if(level4_psi):
-			fltwf1 += cD4
-		if(level5_psi):
-			fltwf1 += cD5
-		if(level6_psi):
-			fltwf1 += cD6
-		if(level7_psi):
-			fltwf1 += cD7
-		if(level1_phi):
-			fltwf1 += cA1
-			print('Using low-frequency side')
-		if(level2_phi):
-			fltwf1 = cA2
-		if(level3_phi):
-			fltwf1 = cA3
-		if(level4_phi):
-			fltwf1 = cA4
-		if(level5_phi):
-			fltwf1 = cA5
-		if(level6_phi):
-			fltwf1 = cA6
-		if(level7_phi):
-			fltwf1 = cA7
+		if(len(add_levels) > 0):
+#			figadd = plt.figure(figsize=(10,6))
+#			ax1=plt.subplot(511)
+#			plt.title(label)
+			for level in range(len(add_levels)):
+				print("Level",add_levels[level])
+				if(int(add_levels[level]) == 0):
+					print("Adding cD7")		
+					for i in range(N):
+						add1[i] += cD7[i]
+				if(int(add_levels[level]) == 1):
+					print("Adding cD6")		
+					for i in range(N):
+						add1[i] += cD6[i]
+				if(int(add_levels[level]) == 2):
+					print("Adding cD5")		
+					for i in range(N):
+						add1[i] += cD5[i]
+				if(int(add_levels[level]) == 3):
+					print("Adding cD4")		
+					for i in range(N):
+						add1[i] += cD4[i]
+				if(int(add_levels[level]) == 4):
+					print("Adding cD3")		
+					for i in range(N):
+						add1[i] += cD3[i]
+				if(int(add_levels[level]) == 5):
+					print("Adding cD2")		
+					for i in range(N):
+						add1[i] += cD2[i]
+				if(int(add_levels[level]) == 6):
+					print("Adding cD1")		
+					for i in range(N):
+						add1[i] += cD1[i]
+#			plt.plot(tt,add1)
+			fltwf1 = add1
+#			plt.show()		
+		
 		[(cA7, cD7),(cA6, cD6),(cA5, cD5),(cA4, cD4),(cA3, cD3),(cA2, cD2), (cA1, cD1)] = wlt.swt(wf2, wlt_type, 7, start_level=start_level)
-		if(level1_psi):
-			print('Using high-frequency side')
-			fltwf2 = cD1
-		if(level2_psi):
-			fltwf2 = cD2
-		if(level3_psi):
-			fltwf2 = cD3
-		if(level4_psi):
-			fltwf2 = cD4
-		if(level5_psi):
-			fltwf2 = cD5
-		if(level6_psi):
-			fltwf2 = cD6
-		if(level7_psi):
-			fltwf2 = cD7
-		if(level1_phi):
-			print('Using low-frequency side')
-			fltwf2 = cA1
-		if(level2_phi):
-			fltwf2 = cA2
-		if(level3_phi):
-			fltwf2 = cA3
-		if(level4_phi):
-			fltwf2 = cA4
-		if(level5_phi):
-			fltwf2 = cA5
-		if(level6_phi):
-			fltwf2 = cA6
-		if(level7_phi):
-			fltwf2 = cA7
+		if(len(add_levels) > 0):
+#			figadd = plt.figure(figsize=(10,6))
+#			ax1=plt.subplot(412, sharex=ax1)
+#			plt.title(label)
+			for level in range(len(add_levels)):
+				print("Level",add_levels[level])
+				if(int(add_levels[level]) == 0):
+					print("Adding cD7")		
+					for i in range(N):
+						add2[i] += cD7[i]
+				if(int(add_levels[level]) == 1):
+					print("Adding cD6")		
+					for i in range(N):
+						add2[i] += cD6[i]
+				if(int(add_levels[level]) == 2):
+					print("Adding cD5")		
+					for i in range(N):
+						add2[i] += cD5[i]
+				if(int(add_levels[level]) == 3):
+					print("Adding cD4")		
+					for i in range(N):
+						add2[i] += cD4[i]
+				if(int(add_levels[level]) == 4):
+					print("Adding cD3")		
+					for i in range(N):
+						add2[i] += cD3[i]
+				if(int(add_levels[level]) == 5):
+					print("Adding cD2")		
+					for i in range(N):
+						add2[i] += cD2[i]
+				if(int(add_levels[level]) == 6):
+					print("Adding cD1")		
+					for i in range(N):
+						add2[i] += cD1[i]
+#			plt.plot(tt,add2)
+			fltwf2 = add2
 		[(cA7, cD7),(cA6, cD6),(cA5, cD5),(cA4, cD4),(cA3, cD3),(cA2, cD2), (cA1, cD1)] = wlt.swt(wf3, wlt_type, 7, start_level=start_level)
-		if(level1_psi):
-			print('Using high-frequency side')
-			fltwf3 = cD1
-		if(level2_psi):
-			fltwf3 = cD2
-		if(level3_psi):
-			fltwf3 = cD3
-		if(level4_psi):
-			fltwf3 = cD4
-		if(level5_psi):
-			fltwf3 = cD5
-		if(level6_psi):
-			fltwf3 = cD6
-		if(level7_psi):
-			fltwf3 = cD7
-		if(level1_phi):
-			print('Using low-frequency side')
-			fltwf3 = cA1
-		if(level2_phi):
-			fltwf3 = cA2
-		if(level3_phi):
-			fltwf3 = cA3
-		if(level4_phi):
-			fltwf3 = cA4
-		if(level5_phi):
-			fltwf3 = cA5
-		if(level6_phi):
-			fltwf3 = cA6
-		if(level7_phi):
-			fltwf3 = cA7
-#
+		if(len(add_levels) > 0):
+#		figadd = plt.figure(figsize=(10,6))
+#		ax1=plt.subplot(413, sharex=ax1)
+#		plt.title(label)
+			for level in range(len(add_levels)):
+				print("Level",add_levels[level])
+				if(int(add_levels[level]) == 0):
+					print("Adding cD7")		
+					for i in range(N):
+						add3[i] += cD7[i]
+				if(int(add_levels[level]) == 1):
+					print("Adding cD6")		
+					for i in range(N):
+						add3[i] += cD6[i]
+				if(int(add_levels[level]) == 2):
+					print("Adding cD5")		
+					for i in range(N):
+						add3[i] += cD5[i]
+				if(int(add_levels[level]) == 3):
+					print("Adding cD4")		
+					for i in range(N):
+						add3[i] += cD4[i]
+				if(int(add_levels[level]) == 4):
+					print("Adding cD3")		
+					for i in range(N):
+						add3[i] += cD3[i]
+				if(int(add_levels[level]) == 5):
+					print("Adding cD2")		
+					for i in range(N):
+						add3[i] += cD2[i]
+				if(int(add_levels[level]) == 6):
+					print("Adding cD1")		
+					for i in range(N):
+						add3[i] += cD1[i]
+#				plt.plot(tt,add3)
+				fltwf3 = add3
 #
 # STA/LTA detector 
 #
@@ -470,16 +494,21 @@ for time_int in xrange(num_intervals):
 # Detections based on STA/LTA 
 #	
 
-	StaLta1=gy.CompStaLta(L_ta, S_ta, samprate, fltwf1)
-	det1=MakeDetect(Detection, StaLta1, snr, samprate, t_group, station1, L_ta)
+	StaLta1 = gy.CompStaLta(L_ta, S_ta, samprate, fltwf1[0:n1])
+	det1 = gy.MakeDetect(Detection, StaLta1, fltwf1, snr, samprate, t_group, station1, L_ta)
 
-	StaLta2=gy.CompStaLta(L_ta, S_ta, samprate, fltwf2)
-	det2=MakeDetect(Detection, StaLta2, snr, samprate, t_group, station2, L_ta)
+	StaLta2 = gy.CompStaLta(L_ta, S_ta, samprate, fltwf2[0:n1])
+	det2 = gy.MakeDetect(Detection, StaLta2, fltwf2, snr, samprate, t_group, station2, L_ta)
 
-	StaLta3=gy.CompStaLta(L_ta, S_ta, samprate, fltwf3)
-	det3=MakeDetect(Detection, StaLta3, snr, samprate, t_group, station3, L_ta)
+	StaLta3 = gy.CompStaLta(L_ta, S_ta, samprate, fltwf3[0:n1])
+	det3 = gy.MakeDetect(Detection, StaLta3, fltwf3, snr, samprate, t_group, station3, L_ta)
+	
+	hag = HydroGroupForm(sfile, triad, det1, det2, det3, plot_detect)
 
-	hag=HydroGroupForm(sfile, triad, det1, det2, det3, plot_detect)
+#	gy.ReceivedLevel(fltwf1, det1, samprate, t_group)
+#	gy.ReceivedLevel(fltwf2, det2, samprate, t_group)
+#	gy.ReceivedLevel(fltwf3, det3, samprate, t_group)
+
 	gy.WhaleDiscriminant(hag,fltwf1,fltwf2,fltwf3,sfile,win_front,win_back,samprate)
 
 	if(refine_crossco):
@@ -491,18 +520,16 @@ for time_int in xrange(num_intervals):
 			samprate, float(low)*samprate*.5, float(high)*samprate*.5,
 			plot_stack, plot_spectim, percent, test_case)
 
-	#
-	#
-	#
+#
+#
+#
 
 	Lshift = int(L_ta*samprate)
 	Sshift = int(S_ta*samprate)
 
-
 #
 # Plotting of filtered and processed waveforms
 #
-
 
 	tsta=array('f',[])
 	tsta2=array('f',[])
@@ -555,7 +582,7 @@ for time_int in xrange(num_intervals):
 		snr3.append(hmax)
 		
 	
-	plt.plot(tflt,fltwf1, 'black',pick1,snr1, 'ro', pick2, snr2, 'ys', pick3, snr3, 'ys')
+	plt.plot(tflt, fltwf1, 'black', pick1, snr1, 'ro', pick2, snr2, 'ys', pick3, snr3, 'ys')
 		
 	label = fm.format(' {0} - Filtered',station1)
 	plt.xlabel(label)
@@ -644,8 +671,9 @@ for time_int in xrange(num_intervals):
 	power2=array('f',[])
 	time1=array('f',[])
 	for i in xrange(len(hag)):	
-		ppow2 = (math.log(hag[i].Det1.pow_30_50) + math.log(hag[i].Det2.pow_30_50) + math.log(hag[i].Det3.pow_30_50))/3.
-		ppow2 = ppow2*20.
+#		ppow2 = (math.log(hag[i].Det1.pow_30_50) + math.log(hag[i].Det2.pow_30_50) + math.log(hag[i].Det3.pow_30_50))/3.
+		ppow2 = (hag[i].Det1.reclev + hag[i].Det2.reclev + hag[i].Det3.reclev)/3.
+#		ppow2 = ppow2*20.
 		power2.append(ppow2)
 		time1.append(hag[i].Det1.time)
 	
