@@ -679,34 +679,43 @@ for time_int in xrange(num_intervals):
 	
 	if(len(power2) > 0):
 		half = 0.5*(max(power2)+min(power2))
-	
+	RL = 0.
+	krl = 0
 	for i in xrange(len(hag)):
 		label = fm.format('{0}', i)
-		plt.annotate(label,xy=(time1[i],power2[i]),xytext=(time1[i]-100., power2[i]-6.), 
+		plt.annotate(label,xy=(time1[i],power2[i]),xytext=(time1[i]-20., power2[i]-6.), 
 			bbox=dict(boxstyle="square", fc="w"),arrowprops=dict(arrowstyle="->"))
 		if(hag[i].whale_disc):
-			plt.annotate('Whale',xy=(time1[i],power2[i]),xytext=(time1[i]-100., power2[i]+4.), 
+			plt.annotate('Whale',xy=(time1[i],power2[i]),xytext=(time1[i]-20., power2[i]+4.), 
 			bbox=dict(boxstyle="round", fc="g"),arrowprops=dict(arrowstyle="->"))
+			krl += 1
+			RL = RL*float(krl-1)/float(krl) + power2[i]/float(krl)
 		else:
-			plt.annotate('N',xy=(time1[i],power2[i]),xytext=(time1[i]-100., power2[i]+4.), 
+			plt.annotate('N',xy=(time1[i],power2[i]),xytext=(time1[i]-20., power2[i]+4.), 
 			bbox=dict(boxstyle="round", fc="r"),arrowprops=dict(arrowstyle="->"))
 
-	label = fm.format('Log of amplitude and detection labelling')
+	label = fm.format('Received level (dB) - Whale average {0:.1f}', RL)
 	plt.xlabel(label)	
 	plt.plot(time1,power2,'ro-')
 	
 	plt.subplot(515,sharex=ax1)
-	cmap_gr=mp.colors.ListedColormap([[0.,0.,0.],[0.,0.,0.05],[0.,0.05,0.05],[0.05,0.05,0.05],[0.05,0.05,.1],[.05,0.1,.1],[.1,0.1,.1],[.1,0.1,.2],[.1,0.2,0.2],[0.2,0.2,0.2],[0.2,0.2,0.3],[.2,0.3,.3],[0.3,0.3,0.3],[.3,0.3,0.4],[1.,1.,0.],[1.,.0,.0],[1.,1.,1.]])
+	cmap_gr=mp.colors.ListedColormap([[0.,0.,0.],[0.,0.,0.05],[0.,0.05,0.05],[0.05,0.05,0.05],[0.05,0.05,0.1],[.05,0.1,.1],[.1,0.1,.1],[.1,0.1,.2],[.1,0.2,0.2],[.2,0.2,0.2],[0.2,0.2,0.3],[.2,0.3,.3],[0.3,0.3,0.3],[.3,0.3,0.4],[1.,1.,0.],[1.,0.,0.],[1.,1.,1.]])
 	Pxx,freqs,bins,im = pylab.specgram(wf1,NFFT=512,Fs=samprate,noverlap=511,cmap=cmap_gr)
 #	plt.ylabel("Frequency in Hz.")
-
+#	f = open('spectrogram','w')
+#        for i in range(len(bins)):
+#		for j in range(len(freqs)):
+#			print(Pxx[j][i])
+#			if(bins[i] > 50. and bins[i] < 130. and freqs[j] > 5. and freqs[j] < 60.):
+#				string = fm.format('( {0:.2f}, {1:.2f} , {2} ) ',bins[i],freqs[j],Pxx[j][i])
+#				f.write(string)
 	label = fm.format('Seconds after {0}', pr_time)
 	plt.xlabel(label)
-#	plt.ylabel("Frequency in Hz.")
-#	plt.subplots_adjust(bottom=0.2)
+	plt.ylabel("Frequency in Hz.")
+	plt.subplots_adjust(bottom=0.2)
 
 	plt.tight_layout(h_pad=.2)
-	plt.ylim(1.,125.)
+	plt.ylim(20.,60.)
 	plt.xlim(-10.,time_interval)
 
 	pylab.savefig(figurename, bbox_inches='tight')
