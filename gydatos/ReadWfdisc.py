@@ -48,9 +48,10 @@ class SoundFile:
 		sound = array('h',[])
 
 		for i in range (len(wfm)):
-			sound.append( int (wfm[i] ))
+			print(wfm[i])
+			sound.append( int (wfm[i]/100 ))
 		prefix='raw'+'_'+start_time+'_'+station
-		gy.WriteSoundFile(sound,prefix,samprate, 10)
+		gy.WriteSoundFile(sound,prefix,samprate, 5)
 
 	def dumpfilt(self,event):
 		sound = array('h',[])
@@ -58,7 +59,7 @@ class SoundFile:
 		for i in range (len(fltwfm)):
 			sound.append( int (fltwfm[i] ))
 		prefix = 'filt'+'_'+start_time+'_'+station
-		gy.WriteSoundFile(sound,prefix,samprate, 10)
+		gy.WriteSoundFile(sound,prefix,samprate, 5)
 		
 
 class Filter:

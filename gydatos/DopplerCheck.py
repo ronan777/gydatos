@@ -78,14 +78,32 @@ def HydroGroupCCRefine(hag,w1,w2,w3,win_front,win_back,samprate,refine,halfwidth
 # Compute either the crosscorrelation of the signal or the crosscorrelation of the envelopes of the signal in a window set to be win_front seconds before the STA-LTA pick and win_back seconds after.
 #			
 	figfft = plt.figure(figsize=(6,15))
+	figamp = plt.figure(figsize=(12,6))
 #	ax = figfft.add_axes([0.1, 0.1, 0.8, 0.8])
 	subf1=figfft.add_subplot(1,1,1)	
-	const = array('f',[])					
+	subf2=figamp.add_subplot(1,1,1)
+	const = array('f',[])	
+	peak20Hz  = array('f',[])
+        amp1_20Hz = array('f',[])
+	amp2_20Hz = array('f',[])
+	amp3_20Hz = array('f',[])	
+	maxamp_20Hz = array('f',[])
+
+	time_20Hz = array('f',[])
+	nvalid = 0			
+	for i in range(len(hag)):
+		peak20Hz.append(0.)
+		peak20Hz.append(0.)
+		peak20Hz.append(0.)
+		
+		
+
 	for i in range(len(hag)):		
 #
 #
 #
-                Offset = i*10.
+                Offset = hag[i].Det1.time
+	
 		wf1 = w1[int((hag[i].Det1.time-win_front)*samprate):int((hag[i].Det1.time+win_back)*samprate)]
 		wf2 = w2[int((hag[i].Det1.time-win_front)*samprate):int((hag[i].Det1.time+win_back)*samprate)]		
 		wf3 = w3[int((hag[i].Det1.time-win_front)*samprate):int((hag[i].Det1.time+win_back)*samprate)]
@@ -134,40 +152,127 @@ def HydroGroupCCRefine(hag,w1,w2,w3,win_front,win_back,samprate,refine,halfwidth
 #			figfft = plt.figure(figsize=(10,6))
 #	ax = figfft.add_axes([0.1, 0.1, 0.8, 0.8])
 #			subf1=figfft.add_subplot(1,1,1)						
+			
+			N = int(len(wf1)/2)			
+			if(i == 0):
+				for c in range(N):
+					const.append(0.)
 
-			N = int(len(wf1)/2)
 	                fft1 = abs(scipy.fft(wf1))
 			freqs = scipy.fftpack.fftfreq(len(wf1),1./samprate)	                
 			fft2 = abs(scipy.fft(wf2))	
 			fft3 = abs(scipy.fft(wf3))
 			label = fm.format('{0} -> {1}', start_time, end_time)	
-			constant = 140.
+			constant = 1400.
+#
+# Check that there is no energy above CONSTANT in interval before and after the expected peak
+#	
+			nonoise = True
+			for c in range(N):
+				if(freqs[c] > 15. and freqs[c]  < 18.5):
+					if(constant < 200.*scipy.log10(fft1[c])):
+						nonoise = False
+					if(constant < 200.*scipy.log10(fft2[c])):
+						nonoise = False
+					if(constant < 200.*scipy.log10(fft3[c])):
+						nonoise = False
+				if(freqs[c] > 21.5 and freqs[c]  < 25.):
+					if(constant < 200.*scipy.log10(fft1[c])):
+						nonoise = False
+					if(constant < 200.*scipy.log10(fft2[c])):
+						nonoise = False
+					if(constant < 200.*scipy.log10(fft3[c])):
+						nonoise = False
+#			if(not nonoise):
+#				continue
+					
+			peak = 0.
+			weigh = 0.0000001
+			amp1 = 0.
+			for c in range(N):
+				if(constant >= 200.*scipy.log10(fft1[c])):
+					const[c]=200.*scipy.log10(fft1[c])+Offset-constant
+					if(freqs[c] > 18. and freqs[c]  < 22.):
+						if(amp1 < 20.*scipy.log10(fft1[c])):
+							amp1 = 	20.*scipy.log10(fft1[c])
+							freq1 = freqs[c]
+							
+				else:
+					const[c]=Offset
+					if(freqs[c] > 18. and freqs[c]  < 22.):
+						peak += freqs[c]*(200.*scipy.log10(fft1[c])-constant)
+						weigh += (200.*scipy.log10(fft1[c])-constant)
+						if(amp1 < 20.*scipy.log10(fft1[c])):
+							amp1 = 	20.*scipy.log10(fft1[c])
+							freq1 = freqs[c]
+#			if( weigh == 0.) :
+#				continue
+			weigh1 = weigh
+			peak20Hz[3*i] = freq1
 			
-			if(i == 0):
-				for c in range(N):
-					const.append(0.)
+			subf1.set_xlim([18. ,22.])
+			subf1.set_ylim([0., 14400.])
+			subf1.set_title(label)
+			print('20Hz peak: r ',peak20Hz[3*i], amp1)
+			nvalid += 1
+#			subf1.plot(peak20Hz[3*i],Offset+constant-50,'ro')
+			subf1.fill_between(freqs[0:N], Offset-constant+200.*scipy.log10(fft1[0:N]), const[0:N], color='red', linewidth=0., edgecolor='white')			
+			peak = 0.
+			weigh = 0.00001
+			amp2 = 0.
 			for c in range(N):
-				if(constant >= 20.*scipy.log10(fft1[c])):
-					const[c]=20.*scipy.log10(fft1[c])+Offset
+				if(constant >= 200.*scipy.log10(fft2[c])):
+					const[c]=200.*scipy.log10(fft2[c])+Offset-constant
+					if(freqs[c] > 18. and freqs[c]  < 22.):
+						if(amp2 < 20.*scipy.log10(fft2[c])):
+							amp2 = 	20.*scipy.log10(fft2[c])
+							freq2 = freqs[c]
 				else:
-					const[c]=Offset+constant
-			pl.xlim([15. ,25.])
-			pl.ylim([100., 750.])
-			plt.title(label)
-#			subf1.plot(freqs[0:N],Offset+20.*scipy.log10(fft1[0:N]),'red',freqs[0:N],Offset+20.*scipy.log10(fft2[0:N]),'green',freqs[0:N],Offset+20.*scipy.log10(fft3[0:N]),'blue')
-			subf1.fill_between(freqs[0:N], Offset+20.*scipy.log10(fft1[0:N]), const[0:N], color='red', linewidth=0., edgecolor='white')
+					const[c]=Offset					
+					if(freqs[c] > 18. and freqs[c]  < 22.):
+						peak += freqs[c]*(200.*scipy.log10(fft2[c])-constant)
+						weigh += (200.*scipy.log10(fft2[c])-constant)
+						if(amp2 < 20.*scipy.log10(fft2[c])):
+							amp2 = 	20.*scipy.log10(fft2[c])
+							freq2 = freqs[c]
+#			if( weigh == 0.) :
+#				continue			
+			peak20Hz[3*i+1] = freq2
+			weigh2 = weigh	
+				
+			print('20Hz peak: g ',peak20Hz[3*i+1], amp2)
+			nvalid += 1
+#			subf1.plot(peak20Hz[3*i+1],Offset+constant-50.,'go')
+			subf1.fill_between(freqs[0:N], Offset-constant+200.*scipy.log10(fft2[0:N]), const[0:N], color='green', linewidth=0., edgecolor='white')			
+			peak = 0.
+			weigh = 0.00000001
+			amp3 = 0.
 			for c in range(N):
-				if(constant >= 20.*scipy.log10(fft2[c])):
-					const[c]=20.*scipy.log10(fft2[c])+Offset
+				if(constant >= 200.*scipy.log10(fft3[c])):
+					const[c]=200.*scipy.log10(fft3[c])+Offset-constant
+					if(freqs[c] > 18. and freqs[c]  < 22.):
+						if(amp3 < 20.*scipy.log10(fft3[c])):
+							amp3 = 	20.*scipy.log10(fft3[c])
+							freq3 = freqs[c]
 				else:
-					const[c]=Offset+constant
-			subf1.fill_between(freqs[0:N], Offset+20.*scipy.log10(fft2[0:N]), const[0:N], color='green', linewidth=0., edgecolor='white')
-			for c in range(N):
-				if(constant >= 20.*scipy.log10(fft3[c])):
-					const[c]=20.*scipy.log10(fft3[c])+Offset
-				else:
-					const[c]=Offset+constant
-			subf1.fill_between(freqs[0:N], Offset+20.*scipy.log10(fft3[0:N]), const[0:N], color='blue', linewidth=0., edgecolor='white')
+					const[c]=Offset
+					if(freqs[c] > 18. and freqs[c]  < 22.):
+						peak += freqs[c]*(200.*scipy.log10(fft3[c])-constant)
+						weigh += (200.*scipy.log10(fft3[c])-constant)
+						if(amp3 < 20.*scipy.log10(fft3[c])):
+							amp3 = 	20.*scipy.log10(fft3[c])
+							freq3 = freqs[c]
+#			if( weigh == 0.) :
+#				continue			
+			peak20Hz[3*i+2] = freq3
+			amp3_20Hz.append(amp3)	
+			print('20Hz peak: b',peak20Hz[3*i+2],amp3)	
+			time_20Hz.append(Offset)
+			amp1_20Hz.append(amp1)
+			amp2_20Hz.append(amp2)	
+			nvalid += 1	
+#			subf1.plot(peak20Hz[3*i+2],Offset+constant-50.,'bo')
+			subf1.fill_between(freqs[0:N], Offset-constant+200.*scipy.log10(fft3[0:N]), const[0:N], color='blue', linewidth=0., edgecolor='white')
 #			subf1.plot(11.+freqs[0:N],Offset+20.*scipy.log10(fft2[0:N]),'green')
 #			subf1.plot(22.+freqs[0:N],Offset+20.*scipy.log10(fft3[0:N]),'blue')
 #			plt.show()
@@ -188,6 +293,34 @@ def HydroGroupCCRefine(hag,w1,w2,w3,win_front,win_back,samprate,refine,halfwidth
 
 			plt.title(label)
 	plt.grid(True)
+#
+# Calculate the average peak frequency and plot two lines for the maximum expected Doppler effect.
+#
+	avg = np.sum(peak20Hz)/float(nvalid)
+	print('Average peak: b', avg)
+	line1 = array('f',[])
+	line1.append(avg-0.2)
+	line1.append(avg-0.2)
+	line2 = array('f',[])	
+	line2.append(avg+0.2)
+	line2.append(avg+0.2)
+	Y = array('f',[])
+	Y.append(0.)
+	Y.append(14400.)
+	subf1.plot(line1,Y,'k',line2,Y,'k')
+	for i in range(len(hag)):	
+		maxamp = 0.
+		if(amp1_20Hz[i] > maxamp):
+			maxamp = amp1_20Hz[i]
+			col ='ro'
+		if(amp2_20Hz[i] > maxamp):
+			maxamp = amp2_20Hz[i]
+			col ='go'
+		if(amp3_20Hz[i] > maxamp):
+			maxamp = amp3_20Hz[i]
+			col ='bo'
+		subf1.plot(19.,time_20Hz[i],col)
+#	subf2.plot(time_20Hz,amp1_20Hz,'ro',time_20Hz,amp2_20Hz,'go',time_20Hz,amp3_20Hz,'bo')				
 	plt.show()
 
 def HydroGroupForm(sfile, triad, det1, det2, det3, plot_detect):

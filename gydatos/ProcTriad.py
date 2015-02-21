@@ -14,22 +14,26 @@
 # Developped February 2013 - Ronan Le Bras - Gydatos LLC
 #
 
-
 # import all necessary modules
 
 
 import struct
 import math
-from   array import *
+#from   array import *
+import matplotlib.mpl as mp
+import matplotlib.colorbar as col
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
+import matplotlib.colors as cl
 from   matplotlib.widgets import Button, Slider
 #import configparser as ConfigParser
 import ConfigParser
 import string
 import time
 import calendar
+import scipy
 import scipy.signal
+import scipy.fftpack
 import numpy as np
 import scipy.io.matlab.byteordercodes
 import pylab
@@ -41,84 +45,18 @@ import subprocess
 import collections
 import gydatos as gy
 
-Detection = collections.namedtuple('Detection',['sta','Det_num','time','dt_cc','duration','freq'], verbose=True)
-Hydro_Group = collections.namedtuple('HAG',['triad','HAG_num','Det1','Det2','Det3','direction','direction_cc'], verbose=True)
+Detection = collections.namedtuple('Detection',
+['sta','Det_num','time','dt_cc','duration','freq','whale_disc','pow_15_25','pow_30_50','pow_50_60','spectim'], 
+verbose=True)
+Hydro_Group = collections.namedtuple('HAG',['triad','HAG_num','whale_disc','Det1','Det2','Det3','direction','absfit','direction_cc','relfit','direction_stk','stkfit'], 
+verbose=True)
 
 fm = string.Formatter()
 
-def HydroGroupCCRefine(hag,w1,w2,w3,win_front,win_back,samprate,tcor):
-  '''
-	Refine the delta-t times obtained from LTA/STA using crosscorrelation 
-        and get an updated direction from these.
-	'''	
-#
-# Compute either the crosscorrelation of the signal or the crosscorrelation of the envelopes of the signal in a window set to be win_front seconds before the STA-LTA pick and win_back seconds after.
-#
-	for i in range(len(hag)):		
-#
-# For each group, get the time window, envelope, and cross-correlation
-#
-		wf1 = w1[int((hag[i].Det1.time-win_front)*samprate):int((hag[i].Det1.time+win_back)*samprate)]
-		wf2 = w2[int((hag[i].Det2.time-win_front)*samprate):int((hag[i].Det2.time+win_back)*samprate)]		
-		wf3 = w3[int((hag[i].Det3.time-win_front)*samprate):int((hag[i].Det3.time+win_back)*samprate)]
-#
-# Hilbert transform
-##
-# Compute Cross-Correlations
-#
-		lcor = int(tcor*samprate)
-		crossco0 = array('f',[])
-		crossco1 = array('f',[])
-		crossco2 = array('f',[])
-		crossco3 = array('f',[])
-		crossco0 = np.correlate(wf1,wf1,'full')
-		crossco1 = np.correlate(wf1,wf2,'full')
-		#
-		#
-		#
-		print ("Crosscorrelation 1")
-		crossco2 = np.correlate(wf1,wf3,'full')
-		print ("Crosscorrelation 2")
 
-		if(envelope):
-			hwf1 = scipy.signal.hilbert(crossco0)
-			print ("Hilbert 1")
-			hwf2 = scipy.signal.hilbert(crossco1)
-			print ("Hilbert 2")
-			hwf3 = scipy.signal.hilbert(crossco2)
-			print ("Hilbert 3")
-#
-# Envelope
-#
-			wf1 = np.absolute(hwf1)
-			wf2 = np.absolute(hwf2)
-			wf3 = np.absolute(hwf3)
+NAN=999.
 
-#
-# Compute Cross-Correlations
-#
-		t0 = gy.TimeOfMax(wf1)
-		t1 = gy.TimeOfMax(wf2)
-		t2 = gy.TimeOfMax(wf3)
-		dt1 = (t1-t0)/samprate
-		dt2 = (t2-t0)/samprate
-		print ("HAG number, HAG:", i, hag[i])
-		
-		Detnew = hag[i].Det1._replace(dt_cc=hag[i].Det1.time)
-		hag[i] = hag[i]._replace(Det1=Detnew)
-		Detnew = hag[i].Det2._replace(dt_cc=hag[i].Det2.time+dt1)
-		hag[i] = hag[i]._replace(Det2=Detnew)		
-		Detnew = hag[i].Det3._replace(dt_cc=hag[i].Det3.time+dt2)
-		hag[i] = hag[i]._replace(Det3=Detnew)
-
-		dt = (hag[i].Det2.dt_cc - hag[i].Det1.dt_cc), (hag[i].Det3.dt_cc - hag[i].Det1.dt_cc)
-						
-		OptDirection, theta, radii = gy.CompOptDirection(dt,sfile,triad)
-		print ("New direction:", OptDirection)
-		hag[i]=hag[i]._replace(direction_cc=OptDirection)
-		print ("HAG number, New HAG:", i, hag[i])
-
-def HydroGroupForm(sfile, triad, det1, det2, det3):
+def HydroGroupForm(sfile, triad, det1, det2, det3, plot_detect):
 	'''
 	Form hydroacoustic groups based on detections at the three hydrophones
 	'''	
@@ -143,24 +81,30 @@ def HydroGroupForm(sfile, triad, det1, det2, det3):
 #
 # Look for optimum fit direction for these picks
 #
-						dt=dt1,dt2
+						dt3 = det3[k].time-det2[j].time
+						std1 = (abs(dt1)+abs(dt1)+abs(dt3))/3.
+						std2 = std1 
+						std3 = std1
+						dt=dt1,dt2, dt3, std1, std2, std3
 						
-						OptDirection,theta,radii = gy.CompOptDirection(dt,sfile,triad)
-						fig = plt.figure(figsize=(6,6))
-						ax = fig.add_axes([0.1, 0.1, 0.8, 0.8], polar=True)
-						N = len(radii)
-						width = 2.*np.pi/N
-						bars = ax.bar(theta, radii, width=width, bottom=0.)
-						for r,bar in zip(radii, bars):
-							bar.set_facecolor( cm.jet(r/10.))
-							bar.set_alpha(0.5)
+						OptDirection,OptVelocity,theta,radii,maxdiff = gy.CompOptDirection(dt,sfile,triad)
+						if(plot_detect):
+							fig = plt.figure(figsize=(6,6))
+							ax = fig.add_axes([0.1, 0.1, 0.8, 0.8], polar=True)
+							N = len(radii)
+							width = 2.*np.pi/N
+							bars = ax.bar(theta, radii, width=width, bottom=0.)
+							for r,bar in zip(radii, bars):
+								bar.set_facecolor( cm.jet(r/10.))
+								bar.set_alpha(0.5)
 	
-						newgrp = [triad,hag_num,det1[i],det2[j],det3[k],OptDirection,0.]
-							
-						label = fm.format('HAG nb {0}', hag_num)
-						label = triad+' '+label
-
-						plt.title(label)
+								
+							label = fm.format('HAG nb {0}', hag_num)
+							label = triad+' '+label
+							plt.title(label)
+						whale = False
+						newgrp = [triad,hag_num,whale,det1[i],det2[j],det3[k],OptDirection,maxdiff,NAN,0.,NAN,0.]
+						
 						print ("Dt vector ", dt)
 						print ("New Group", maxdt1, maxdt2,i,j,k,OptDirection,'\n',newgrp,'\n')
 						hag.append(Hydro_Group._make(newgrp))
@@ -168,8 +112,9 @@ def HydroGroupForm(sfile, triad, det1, det2, det3):
 	return hag	
 	
 
-def MakeDetect(Det, w, snr, samprate, t_group, sta):
+def MakeDetect(Det, w, snr, samprate, t_group, sta, shift):
 	det = []
+	spectim=[]
 	init=0
 	det_num=0
 	for i in range(1,len(w)):
@@ -178,11 +123,11 @@ def MakeDetect(Det, w, snr, samprate, t_group, sta):
 			init=1
 			dw = (snr-w[i-1])/(w[i]-w[i-1])
 			if dw != 0. :
-				t = t0+1./samprate/dw
+				t = t0+shift+dw/samprate
 			ndet = len(det)
 #			print "ndet", ndet, det
 			if((ndet==0) or (ndet > 0 and (t-det[ndet-1].time) > t_group)):
-				newdet=[sta,det_num,t,0.,0.,0.]
+				newdet=[sta,det_num,t,0.,0.,0.,False,0.,0.,0.,spectim]
 				det_num+=1
 				print (t0, w[i-1], w[i])
 				print (newdet,'\n')
@@ -205,8 +150,8 @@ vector_plot = config.getboolean('control_parameters', 'vector_plot')
 #wfile = config.get('waveforms', 'wfile')
 wfdisc = config.get('waveforms', 'wfdisc')
 
-start_time = config.get('time_interval','start_time')
-end_time = config.get('time_interval','end_time')
+start_time  = config.get('time_interval','start_time')
+end_time    = config.get('time_interval','end_time')
 time_format = config.get('time_interval','format') 
 
 # station = config.get('time_interval','Station')
@@ -235,11 +180,28 @@ t_group = config.getfloat('Detect','time_group')
 S_ta = config.getfloat('Detect','STA')
 L_ta = config.getfloat('Detect','LTA')
 plot_detect = config.getboolean('Detect','plot_detect')
+plot_waveform = config.getboolean('Detect','plot_waveform')
+plot_crossco = config.getboolean('Detect','plot_crossco')
+stack = config.getboolean('Detect','stack')
+plot_stack = config.getboolean('Detect','plot_stack')
+plot_spect = config.getboolean('Detect','plot_spect')
+plot_hist = config.getboolean('Detect','plot_hist')
+plot_spectim = config.getboolean('Detect','plot_spectim')
+plot_power = config.getboolean('Detect','plot_power')
+plot_ratios = config.getboolean('Detect','plot_ratios')
+
 
 sfile    = config.get('Azimuth','sfile')
-az_width = config.getfloat('Azimuth','width')
+halfwidth = config.getfloat('Azimuth','halfwidth')
 az_type  = config.get('Azimuth','type')
 test_case = config.getboolean('Azimuth','test_case')
+theta1  = config.getfloat('Azimuth','theta1')
+boxcar  = config.getfloat('Azimuth','boxcar')
+noise_level = config.getfloat('Azimuth','noise_level')
+
+refine_crossco = config.getboolean('Azimuth','refine_crossco')
+percent = config.getfloat('Azimuth','percent_top')
+minfit = config.getfloat('Azimuth','thresh_fit')
 
 
 if verbose > 2:
@@ -271,82 +233,46 @@ if verbose > 1:
 dt1max, dt2max = gy.CompmaxDt(sfile,triad)
 	
 
-samprate, start_wf1, wf1 = gy.ReadWfm(wfdisc, start_e, end_e, station1, verbose)
-samprate, start_wf2, wf2 = gy.ReadWfm(wfdisc, start_e, end_e, station2, verbose)
-samprate, start_wf3, wf3 = gy.ReadWfm(wfdisc, start_e, end_e, station3, verbose)
-samprate, start_master_wf, master_wf = gy.ReadWfm(wfdisc, start_master_e, end_master_e, sta_master, verbose)
+samprate, start_wf1, num_samp1, wf1 = gy.ReadWfm(wfdisc, start_e, end_e, station1, verbose)
+samprate, start_wf2, num_samp2, wf2 = gy.ReadWfm(wfdisc, start_e, end_e, station2, verbose)
+samprate, start_wf3, num_samp3, wf3 = gy.ReadWfm(wfdisc, start_e, end_e, station3, verbose)
+samprate, start_master_wf, num_master, master_wf = gy.ReadWfm(wfdisc, start_master_e, end_master_e, sta_master, verbose)
 #
 #
 #
-Wn = array('f',[])
-Wn.append(float(low))
-Wn.append(float(high))
+if (test_case):
+	d1,d2 = gy.ReadSite(sfile, triad, 0)
+	theta1 = (theta1+90.)*np.pi/180.
+	dt1,dt2 = gy.CompDt(d1,d2,theta1,1.48)
+	for i in range (len(wf1)):
+		wf1[i] = noise_level*np.random.random_sample()
+		wf2[i] = noise_level*np.random.random_sample()
+		wf3[i] = noise_level*np.random.random_sample()
+#
+# Replace traces with boxcar in the middle of the trace 
+#
+
+	for i in range(int(boxcar*samprate)):
+		wf1[len(wf1)/2-int(boxcar*samprate/2)+i] += 1.
+		wf2[len(wf2)/2-int(boxcar*samprate/2)+i+int(dt1*samprate)] += 1.
+		wf3[len(wf3)/2-int(boxcar*samprate/2)+i+int(dt2*samprate)] += 1.
+
+
+Wn = np.array([])
+bounds = np.array([float(low),float(high)])
+Wn = np.append(Wn,bounds)
+print(Wn)
+
 b,a = scipy.signal.iirfilter(order, Wn)
 print (a, b) 
-
+print("Expected sample length:", int(1+(end_e-start_e)*samprate))
+print("Read", num_samp1, num_samp2, num_samp3, "samples")
 fltwf1 = scipy.signal.lfilter(b, a, wf1)
-print ("Filtered 1")
+print ("Filtered 1, length:", len(wf1))
 fltwf2 = scipy.signal.lfilter(b, a, wf2)
-print ("Filtered 2")
+print ("Filtered 2, length:", len(wf2))
 fltwf3 = scipy.signal.lfilter(b, a, wf3)
-print ("Filtered 3")
-if envelope:
-	hwf1 = scipy.signal.hilbert(fltwf1)
-	print ("Hilbert 1")
-	hwf2 = scipy.signal.hilbert(fltwf2)
-	print ("Hilbert 2")
-	hwf3 = scipy.signal.hilbert(fltwf3)
-	print ("Hilbert 3")
-	fltwf1 = np.absolute(hwf1)
-	fltwf2 = np.absolute(hwf2)
-	fltwf3 = np.absolute(hwf3)
-#
-# Calculate median level of the envelopes
-#
-#
-sortwf1 = sorted(fltwf1)
-medind = int(len(fltwf1)/2)
-median1 = sortwf1[medind]
-sortwf2 = sorted(fltwf2)
-median2 = sortwf2[medind]
-sortwf3 = sorted(fltwf3)
-median3 = sortwf3[medind]
-
-tmed = [0.,(end_e-start_e)]
-med1 = [snr*median1, snr*median1]
-med2 = [snr*median2, snr*median2]
-med3 = [snr*median3, snr*median3]
-#
-#
-# Find peak correlation of envelopes
-#
-#
-if (correlate):
-	lcor=int(tcor*samprate)
-	crossco0 = array('f',[])
-	crossco1 = array('f',[])
-	crossco2 = array('f',[])
-	crossco3 = array('f',[])
-	crossco0 = np.correlate(fltwf1,fltwf1,'full')
-	crossco1 = np.correlate(fltwf1,fltwf2,'full')
-	#
-	#
-	#
-	print ("Crosscorrelation 1")
-	crossco2 = np.correlate(fltwf1,fltwf3,'full')
-	print ("Crosscorrelation 2")
-	t0 = gy.TimeOfMax(crossco0)
-	t1 = gy.TimeOfMax(crossco1)
-	t2 = gy.TimeOfMax(crossco2)
-	dt1 = (t1-t0)/samprate
-	dt2 = (t2-t0)/samprate
-	crossco3 = np.correlate(fltwf2,fltwf3,'full')
-	print ("Crosscorrelation 3")
-	t3 = gy.TimeOfMax(crossco3)
-	dt3= (t3-t0)/samprate
-	diffdt = dt3-(dt2+dt1)
-	print ("t0, t1, t2, t3", t0, t1, t2, t3)
-	print ("dt1, dt2, dt3, diffdt", dt1, dt2, dt3, diffdt)
+print ("Filtered 3, length:", len(wf3))
 
 #
 # STA/LTA detector 
@@ -356,16 +282,26 @@ if (correlate):
 #	
 
 StaLta1=gy.CompStaLta(L_ta, S_ta, samprate, fltwf1)
-det1=MakeDetect(Detection, StaLta1, snr, samprate, t_group, station1)
+det1=MakeDetect(Detection, StaLta1, snr, samprate, t_group, station1, L_ta)
 
 StaLta2=gy.CompStaLta(L_ta, S_ta, samprate, fltwf2)
-det2=MakeDetect(Detection, StaLta2, snr, samprate, t_group, station2)
+det2=MakeDetect(Detection, StaLta2, snr, samprate, t_group, station2, L_ta)
 
 StaLta3=gy.CompStaLta(L_ta, S_ta, samprate, fltwf3)
-det3=MakeDetect(Detection, StaLta3, snr, samprate, t_group, station3)
+det3=MakeDetect(Detection, StaLta3, snr, samprate, t_group, station3, L_ta)
 
-hag=HydroGroupForm(sfile, triad, det1, det2, det3)
-HydroGroupCCRefine(hag,fltwf1,fltwf2,fltwf3,win_front,win_back,samprate,tcor)
+
+hag=HydroGroupForm(sfile, triad, det1, det2, det3, plot_detect)
+gy.WhaleDiscriminant(hag,fltwf1,fltwf2,fltwf3,sfile,win_front,win_back,samprate)
+
+if(refine_crossco):
+	gy.HydroGroupCCRefine(hag, fltwf1, fltwf2, fltwf3, sfile, triad, win_front, win_back,
+		samprate, tcor, envelope, refine_crossco, halfwidth,
+		plot_waveform, plot_crossco, plot_detect, plot_spect)
+if(stack):
+	gy.HydroGroupSTRefine(hag, fltwf1, fltwf2, fltwf3, sfile, triad, win_front, win_back,
+		samprate, float(low)*samprate*.5, float(high)*samprate*.5,
+		plot_stack, plot_spectim, percent, test_case)
 
 #
 #
@@ -379,179 +315,282 @@ Sshift = int(S_ta*samprate)
 # Plotting of filtered waveforms
 #
 
-if(vector_plot == True):
-	plt.show()	
-	tsta=array('f',[])
+if(vector_plot == True):	
+
+	tsta  = np.array([])
+	tsta2 = np.array([])
+	tsta3 = np.array([])
+
 	for j in range (len(StaLta1)):
-		tsta.append(float(Lshift-Sshift)/samprate+float(j)/samprate)	
+		tsta = np.append(tsta,[float(Lshift)/samprate+float(j)/samprate])	
 	
-	ax1=plt.subplot(311)
+	ax1=plt.subplot(512)
 
-	pick1 = array('f',[])	
-	pick2 = array('f',[])	
-	pick3 = array('f',[])
+	pick1 = np.array([])	
+	pick2 = np.array([])	
+	pick3 = np.array([])
+	snr1 = np.array([])
 
-	snr1 = array('f',[])
+	nwhale = 0
 	for i in range(len(hag)):
-		pick1.append(float(Lshift-Sshift)/samprate+hag[i].Det1.time)		
-		pick2.append(float(Lshift-Sshift)/samprate+hag[i].Det2.time)		
-		pick3.append(float(Lshift-Sshift)/samprate+hag[i].Det3.time)
-		snr1.append(snr)
-	plt.plot(tsta,StaLta1,'red',pick1,snr1, 'ro')
+#		if(hag[i].whale_disc):
+			pick1 = np.append(pick1,[hag[i].Det1.time])		
+			pick2 = np.append(pick2,[hag[i].Det2.time])		
+			pick3 = np.append(pick3,[hag[i].Det3.time])
+			snr1 = np.append(snr1,[snr])
+			nwhale += 1
+	print(len(tsta),len(StaLta1),len(pick1),len(snr1))
+	plt.plot(tsta,StaLta1,'red',  pick1,snr1, 'ro')
+
+#	print(len(tsta),len(StaLta1),len(StaLta2),len(StaLta3))	
+
 	plt.plot(tsta,StaLta2,'green',pick2,snr1, 'go')
-	plt.plot(tsta,StaLta3,'blue',pick3,snr1, 'bo')
+	plt.plot(tsta,StaLta3,'blue' ,pick3,snr1, 'bo')
+	plt.show()
+	plt.xlabel("STA/LTA ratio")
 
-	plt.ylabel("STA/LTA ratio")
-
-	plt.subplot(312,sharex=ax1)
+	plt.subplot(511,sharex=ax1)
 	
-	snr2 = array('f',[])
-	tflt = array('f',[])
-	tpick1 = array('f',[])
-	allpick1 = array('f',[])
+	snr2 = np.array([])
+	snr3 = np.array([])
+	snr1 = np.array([])
+	tflt = np.array([])
+	tpick1 = np.array([])
+	allpick1 = np.array([])
 	for j in range (len(fltwf1)):
-		tflt.append(float(j)/samprate)		
+		tflt = np.append(tflt,[float(j)/samprate])		
+	hmax = 0.5*max(fltwf1)
 	
-	for i in range(len(hag)):		
-		snr2.append(-1.*snr)
-
-	for i in range(len(det1)):
-		allpick1.append(det1[i].time)
-		tpick1.append(0.)
+	for i in range(len(pick1)):
+		snr1=np.append(snr1,[-1.*hmax])
+	for i in range(len(pick2)):
+		snr2=np.append(snr2,[0.])
+	for i in range(len(pick3)):
+		snr3=np.append(snr3,[0.])
+		
 	
-	plt.plot(tflt,fltwf1, 'black',allpick1,tpick1, 'rs', pick1, snr2, 'ro')
+	plt.plot(tflt,fltwf1, 'black',pick1,snr1, 'ro', pick2, snr2, 'ys', pick3, snr3, 'ys')
 		
 	label = fm.format(' {0} - Filtered',station1)
-	plt.ylabel(label)
-	ax=plt.subplot(313,sharex=ax1)
+	plt.xlabel(label)
+	ax=plt.subplot(513,sharex=ax1)
         
-	X = array('f',[])
-	Y = array('f',[])
-	u = array('f',[])
-	v = array('f',[])
+	X = np.array([])
+	Y = np.array([])
+	u = np.array([])
+	v = np.array([])
+	j = 0
+
 	for i in range(len(hag)):
-		X.append(pick1[i])
-		X.append(pick1[i])
-		Y.append(-1.*snr)
-		Y.append(snr)
-		u.append(math.cos(hag[i].direction))
-		v.append(math.sin(hag[i].direction))		
-		u.append(math.cos(hag[i].direction_cc))
-		v.append(math.sin(hag[i].direction_cc))
-		label = fm.format('Angle {0} ',180.*(hag[i].direction-0.5*np.pi)/np.pi)
-		ax.text(pick1[i],-0.8*snr,label)
-		label = fm.format('Angle {0} ',180.*(hag[i].direction_cc-0.5*np.pi)/np.pi)
-		ax.text(pick1[i],1.2*snr,label)
+		if(hag[i].whale_disc and (hag[i].absfit > minfit or hag[i].relfit > minfit)):
+#		if(hag[i].absfit > minfit or hag[i].relfit > minfit):
+
+			X = np.append(X,[hag[i].Det1.time])
+			X = np.append(X,[hag[i].Det1.time])
+			X = np.append(X,[hag[i].Det1.time])
+			ypt=-1.*snr
+			Y = np.append(Y,[ypt])
+			Y = np.append(Y,[0.])
+			Y = np.append(Y,[snr])
+			u = np.append(u,[math.cos(hag[i].direction)])
+			v = np.append(v,[math.sin(hag[i].direction)])
+			if(hag[i].direction_cc != NAN):		
+				u = np.append(u, [math.cos(hag[i].direction_cc)])
+				v = np.append(v, [math.sin(hag[i].direction_cc)])	
+			else:
+				u = np.append(u, [0.])
+				v = np.append(v, [0.])		
+			if(hag[i].direction_stk != NAN):
+				u = np.append(u, [math.cos(hag[i].direction_stk)])
+				v = np.append(v, [math.sin(hag[i].direction_stk)])
+			else:
+				u = np.append(u, [0.])
+				v = np.append(v, [0.])
+			ang1 = hag[i].direction
+			ang2 = hag[i].direction_cc
+			ang3 = hag[i].direction_stk
+			pee  = float(np.pi)
+
+			ang1 = ang1-0.5*pee
+			ang2 = ang2-0.5*pee
+			ang3 = ang3-0.5*pee
+
+			ang1 = ang1*(180./pee)
+			ang2 = ang2*(180./pee)	
+			ang3 = ang3*(180./pee)
+
+#			print("Angles:", hag[i].direction, hag[i].direction_cc, ang1, ang2, pee)
+			label = fm.format('{0}{1}',int(ang1),unichr(176))
+			ax.text(hag[i].Det1.time,-0.8*snr,label)
+			if(hag[i].direction_cc != NAN):	
+				label = fm.format('{0}{1}',int(ang2),unichr(176))
+				ax.text(hag[i].Det1.time,.2*snr,label)
+			if(hag[i].direction_stk != NAN):
+				label = fm.format('{0}{1}',int(ang3),unichr(176))
+				ax.text(hag[i].Det1.time,1.2*snr,label)
+			j += 1
 
 	plt.plot(pick1, snr2, 'ro')
+	plt.plot(pick1, snr3, 'mo')
 	plt.plot(pick1, snr1, 'bo')
-	plt.quiver(X,Y,u,v)
-	label = fm.format('Seconds after {0}',start_time)
+	plt.quiver(X,Y,u,v,units='height',scale=1.5)
+	label = fm.format('Direction of propagation')
 	plt.xlabel(label)	
 	
-	plt.ylabel("Incoming direction of signal")
-	plt.ylim(-2*snr,2*snr)
+#	plt.ylabel("Direction of propagation")
+	plt.ylim(-3*snr,3*snr)
+
+	plt.subplot(514,sharex=ax1)
+	power2=np.array([])
+	time1=np.array([])
+	for i in range(len(hag)):	
+		ppow2 = (math.log(hag[i].Det1.pow_30_50) + math.log(hag[i].Det2.pow_30_50) + math.log(hag[i].Det3.pow_30_50))/3.
+		power2 = np.append(power2, [ppow2])
+		time1 = np.append(time1,[hag[i].Det1.time])
+	if(len(power2) == 0):
+		power2 = np.append(power2,[0.])
+		time1 = np.append(time1,[0.])
+	
+	half = 0.5*(max(power2)+min(power2))
+	
+	for i in range(len(hag)):
+		label = fm.format('{0}', i)
+		plt.annotate(label,xy=(time1[i],power2[i]),xytext=(time1[i]-100., power2[i]-.3), 
+			bbox=dict(boxstyle="square", fc="w"),arrowprops=dict(arrowstyle="->"))
+		if(hag[i].whale_disc):
+			plt.annotate('Whale',xy=(time1[i],power2[i]),xytext=(time1[i]-100., power2[i]+.2), 
+			bbox=dict(boxstyle="round", fc="g"),arrowprops=dict(arrowstyle="->"))
+		else:
+			plt.annotate('N',xy=(time1[i],power2[i]),xytext=(time1[i]-100., power2[i]+.2), 
+			bbox=dict(boxstyle="round", fc="r"),arrowprops=dict(arrowstyle="->"))
+
+	plt.plot(time1,power2,'ro-')
+	
+	
+	cmap_gr = mp.colors.ListedColormap([[0.,0.,0.],[0.,0.,0.05],[0.,0.05,0.05],[0.05,0.05,0.05],[0.05,0.05,.1],[.05,0.1,.1],[.1,0.1,.1],[.1,0.1,.2],[.1,0.2,0.2],[0.2,0.2,0.2],[0.2,0.2,0.3],[.2,0.3,.3],[0.3,0.3,0.3],[.3,0.3,0.4],[1.,1.,.0],[1.,.0,.0],[1.,1.,1.]])
+	Pxx,freqs,bins,im = pylab.specgram(wf1,NFFT=512,Fs=samprate,noverlap=511,cmap=cmap_gr)
+	print('Pxx.shape',Pxx.shape[0],freqs.shape[0],bins.shape[0])
+#	plt.ylabel("Frequency in Hz.")
+	sp=plt.subplot(515,sharex=ax1)
+	plt.pcolor( Pxx)
+	label = fm.format('Seconds after {0}', start_time)
+	plt.xlabel(label)
+#	plt.ylabel("Frequency in Hz.")
+#	plt.subplots_adjust(bottom=0.2)
+
+	plt.tight_layout(h_pad=.2)
+	plt.ylim(15.,50.)
+	plt.xlim(-60.,tflt[len(tflt)-1]+60.)
+
+	cl.LogNorm(vmin=0., vmax=50., clip=True)
+	cb=plt.colorbar()
+	cb.ax.set_yticks([-100., 100])
 	plt.show()
-else:
-	t=array('f',[])
-	for j in range (len(fltwf1)):
-		t.append(float(j)/samprate)		
-	print ("samprate = ", samprate, "length =", len(fltwf1))
-	print ("Median1=", median1, "Median2=", median2, "Median3=", median3)
-	ax1=plt.subplot(331)
-	plt.plot(t, fltwf1, 'b', tmed, med1,'r')
+
+if(plot_hist):
+	theta=np.linspace(0.,2.*np.pi,37)
+
+	hist_abs=array('f',[])
+	hist_rel=array('f',[])
+	hist_stk=array('f',[])
+	for i in range(37):
+		hist_abs.append(0.)
+		hist_rel.append(0.)
+		hist_stk.append(0.)
 	
-	label = fm.format(' {0} - Filtered',station1)
+	nwhale1 = 0
+	nwhale2 = 0
+	nwhale3 = 0
+	for i in range(len(hag)):
+		if(hag[i].whale_disc): 
+			if (hag[i].absfit >= minfit):			
+				hist_abs[int(18.*(hag[i].direction/np.pi))] += 1.
+				nwhale1 += 1
+			if (hag[i].relfit >= minfit):
+				hist_rel[int(18.*(hag[i].direction_cc/np.pi))] += 1.	
+				nwhale2 += 1
+			if (hag[i].stkfit >= minfit and hag[i].direction_stk != NAN):
+				hist_stk[int(18.*(hag[i].direction_stk/np.pi))] += 1.
+				nwhale3 += 1
+
+	fig1 = plt.figure(figsize=(6,6))
+	ax = fig1.add_axes([0.1, 0.1, 0.8, 0.8], polar=True)
+	N = len(theta)
+	width = 2.*np.pi/N
+	bars = ax.bar(theta, hist_abs, width=width, bottom=0.)
+	for r,bar in zip(hist_abs, bars):
+		bar.set_facecolor( cm.jet(r/10.))
+		bar.set_alpha(0.6)
+		
+	label = fm.format('Histogram abs {0} points', nwhale1)
+	label = triad+' '+label
 	plt.title(label)
-	plt.subplot(334,sharex=ax1)
-	plt.plot(t, fltwf2, 'b', tmed, med2,'r')
 
-	label = fm.format('{0} - Filtered',station2)
+	fig2 = plt.figure(figsize=(6,6))
+	ax2 = fig2.add_axes([0.1, 0.1, 0.8, 0.8], polar=True)
+	N = len(theta)
+	width = 2.*np.pi/N
+	bars = ax2.bar(theta, hist_rel, width=width, bottom=0.)
+	for r,bar in zip(hist_rel, bars):
+		bar.set_facecolor( cm.jet(r/10.))
+		bar.set_alpha(0.6)
+		
+	label = fm.format('Histogram rel {0} points', nwhale2)
+	label = triad+' '+label
 	plt.title(label)
 
-	plt.subplot(337,sharex=ax1)
-	plt.plot(t, fltwf3, 'b',tmed, med3,'r')
-	plt.ylabel("Correlation coefficient")
-	label = fm.format('{0} - Filtered',station3)
+	fig3 = plt.figure(figsize=(6,6))
+	ax3 = fig3.add_axes([0.1, 0.1, 0.8, 0.8], polar=True)
+	N = len(theta)
+	width = 2.*np.pi/N
+	bars = ax3.bar(theta, hist_stk, width=width, bottom=0.)
+	for r,bar in zip(hist_stk, bars):
+		bar.set_facecolor( cm.jet(r/10.))
+		bar.set_alpha(0.6)
+		
+	label = fm.format('Histogram stk {0} points', nwhale3)
+	label = triad+' '+label
 	plt.title(label)
-	plt.subplot(332,sharex=ax1)
-
-
-
-	pick1 = array('f',[])
-	snr1 = array('f',[])
-	for i in range(len(det1)):
-		pick1.append(float(Lshift-Sshift)/samprate+det1[i].time)
-		snr1.append(snr)
-	plt.plot(tsta,StaLta1,pick1,snr1, 'o')
-	label = fm.format('Seconds after {0}',start_time)
-	plt.xlabel(label)
-	plt.ylabel("StaLta ratio")
-
-	plt.subplot(335,sharex=ax1)
-	pick2 = array('f',[])
-	snr2 = array('f',[])
-	for i in range(len(det2)):
-		pick2.append(float(Lshift-Sshift)/samprate+det2[i].time)
-		snr2.append(snr)
-	
-	plt.plot(tsta,StaLta2, pick2, snr2, 'o')
-	label = fm.format('Seconds after {0}',start_time)
-	plt.xlabel(label)
-	plt.ylabel("StaLta ratio")
-
-	plt.subplot(338,sharex=ax1)
-
-	pick3 = array('f',[])
-	snr3 = array('f',[])
-	for i in range(len(det3)):
-		pick3.append(float(Lshift-Sshift)/samprate+det3[i].time)
-		snr3.append(snr)
-
-	plt.plot(tsta, StaLta3, pick3, snr3, 'o')
-	label = fm.format('Seconds after {0}',start_time)
-	plt.xlabel(label)
-	plt.ylabel("StaLta ratio")
-	plt.subplot(333,sharex=ax1)
-
-	
-	if (correlate):
-		tcor=array('f',[])
-		for j in range (len(crossco1)):
-			tcor.append(-0.5*float(len(crossco1)-1)/samprate+float(j)/samprate)	
-		plt.plot(tcor,crossco1)
-	elif (plot_detect):
-		plt.plot(pick1,snr1,'go',pick2,snr2,'rx',pick3,snr3,'bs')
-	else:
-		plt.plot(tsta,StaLta1)
-
-	label = fm.format('Seconds after {0}',start_time)
-	plt.xlabel(label)
-	plt.ylabel("StaLta ratio")
-	plt.subplot(336,sharex=ax1)
-
-	if (correlate):	
-		plt.plot(tcor,crossco2)
-	else:
-		plt.plot(tsta,StaLta2)	
-
-	label = fm.format('Seconds after {0}',start_time)
-	plt.xlabel(label)
-	plt.ylabel("StaLta ratio")
-	plt.subplot(339,sharex=ax1)
-	
-	if (correlate):	
-		plt.plot(tcor,crossco3)
-	else:
-		plt.plot(tsta,StaLta3)
-
-	label = fm.format('Seconds after {0}',start_time)
-	plt.xlabel(label)
-	plt.ylabel("StaLta ratio")
-
-	#
-	#plt.subplots_adjust(bottom=0.2)
-	#
-	figurename = triad+'_'+start_time+'.png'
-	pylab.savefig(figurename)
 	plt.show()
+
+if(plot_power):
+	power1=array('f',[])
+	power2=array('f',[])
+	power3=array('f',[])
+	time1=array('f',[])
+	time2=array('f',[])
+	time3=array('f',[])
+	for i in range(len(hag)):
+		ppow1 = (math.log(hag[i].Det1.pow_15_25) + math.log(hag[i].Det2.pow_15_25) + math.log(hag[i].Det3.pow_15_25))/3.
+		ppow2 = (math.log(hag[i].Det1.pow_30_50) + math.log(hag[i].Det2.pow_30_50) + math.log(hag[i].Det3.pow_30_50))/3.
+		ppow3 = (math.log(hag[i].Det1.pow_50_60) + math.log(hag[i].Det2.pow_50_60) + math.log(hag[i].Det3.pow_50_60))/3.
+
+		power1.append(ppow1)
+		power2.append(ppow2)
+		power3.append(ppow3)
+		time1.append(hag[i].Det1.time)
+		
+	plt.plot(time1,power1, 'ro',time1,power2,'go',time1,power3,'bo')
+	plt.show()
+
+if(plot_ratios):
+#	power1=array('f',[])
+	power2=array('f',[])
+	power3=array('f',[])
+	time1=array('f',[])
+#	time2=array('f',[])
+#	time3=array('f',[])
+	for i in range(len(hag)):
+		ppow1 = (math.log(hag[i].Det1.pow_15_25) + math.log(hag[i].Det2.pow_15_25) + math.log(hag[i].Det3.pow_15_25))/3.
+		ppow2 = (math.log(hag[i].Det1.pow_30_50) + math.log(hag[i].Det2.pow_30_50) + math.log(hag[i].Det3.pow_30_50))/3.
+		ppow3 = (math.log(hag[i].Det1.pow_50_60) + math.log(hag[i].Det2.pow_50_60) + math.log(hag[i].Det3.pow_50_60))/3.
+
+#		power1.append(ppow1)
+		power2.append(ppow2/ppow1)
+		power3.append(ppow2/ppow3)
+		time1.append(hag[i].Det1.time)
+		
+	plt.xlim(-60.,time1[len(time1)-1]+60.)
+	plt.plot(time1,power2,'go',time1,power3,'bo')
+	plt.show()	
+

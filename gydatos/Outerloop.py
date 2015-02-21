@@ -715,7 +715,7 @@ for time_int in xrange(num_intervals):
 	plt.subplots_adjust(bottom=0.2)
 
 	plt.tight_layout(h_pad=.2)
-	plt.ylim(20.,60.)
+	plt.ylim(15.,50.)
 	plt.xlim(-10.,time_interval)
 
 	pylab.savefig(figurename, bbox_inches='tight')
