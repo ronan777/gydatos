@@ -45,13 +45,6 @@ LARGE = 9999999.
 epsilon = 0.001
 
 
-
-
-
-
-
-
-
 def CheckFreqRatio(signal,samprate,frange,ratio):
 	fft1 = abs(scipy.fft(signal))
 	freqs = scipy.fftpack.fftfreq(len(signal),1./samprate)
@@ -980,8 +973,8 @@ def CompStaLta (L_ta, S_ta, samprate, w):
 #		
 		StaLta.append(rat*Sta/Lta)
 #		
-		if(Sta < 0. or Lta < 0.) :
-			print("Warning !! negative STA or LTA", len(w) , Lshift, Sshift, Sta, Lta, j)
+#		if(Sta < 0. or Lta < 0.) :
+#			print("Warning !! negative STA or LTA", len(w) , Lshift, Sshift, Sta, Lta, j)
 		j+=1
 	del W
 	return StaLta
