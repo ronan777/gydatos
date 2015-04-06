@@ -212,6 +212,8 @@ if verbose > 2:
 cnx = ms.connect(host='sql4.freesqldatabase.com',user='sql457121', passwd='fN2%aL4!', db='sql457121')
 
 cnx.query('TRUNCATE table WhaleDetection')
+cnx.query('TRUNCATE table TRIADS')
+
 
 print ('Connector:', cnx)
 # Parse time variables and get start and end epoch time
@@ -360,11 +362,16 @@ if(vector_plot == True):
 			pick3 = np.append(pick3,[hag[i].Det3.time])
 #	 		cnx.query("""INSERT INTO WhaleDetection VALUES (detid, hag[i].Det1.sta, hag[i].Det1.time, hag[i].Det1.whale_disc)""")
                         insert_string = 'INSERT INTO WhaleDetection VALUES (%d,"%s",%f,%f,%d)' %  (detid, hag[i].Det1.sta, hag[i].Det1.time,  hag[i].Det1.dt_cc, hag[i].Det1.whale_disc)
-	 		cnx.query(insert_string)                      
+	 		cnx.query(insert_string) 
+                        detid = detid + 1                      
                         insert_string = 'INSERT INTO WhaleDetection VALUES (%d,"%s",%f,%f,%d)' %  (detid, hag[i].Det2.sta, hag[i].Det2.time,  hag[i].Det2.dt_cc, hag[i].Det2.whale_disc)
  	 		cnx.query(insert_string)
+                        detid = detid + 1
                         insert_string = 'INSERT INTO WhaleDetection VALUES (%d,"%s",%f,%f,%d)' %  (detid, hag[i].Det3.sta, hag[i].Det3.time,  hag[i].Det3.dt_cc, hag[i].Det3.whale_disc)
 	 		cnx.query(insert_string)
+                        insert_string = 'INSERT INTO TRIADS VALUES ("%s",%d,%d,%d,%d,%f,%f,%f,%f,%f,%f)' %  (triad,i, detid-2, detid-1, detid,  hag[i].direction, hag[i].absfit, hag[i].direction_cc, hag[i].relfit, hag[i].direction_stk, hag[i].stkfit)
+	 		cnx.query(insert_string) 
+                        detid = detid + 1 
 			snr1 = np.append(snr1,[snr])
 			nwhale += 1
 	print(len(tsta),len(StaLta1),len(pick1),len(snr1))
@@ -503,7 +510,12 @@ if(vector_plot == True):
         cnx.query("SELECT * from WhaleDetection")
 	result=cnx.store_result()
         
-	print result.fetch_row(6)
+	print result.fetch_row(6)        
+        cnx.query("SELECT * from TRIADS")
+	result=cnx.store_result()
+        
+	print result.fetch_row(2)
+
         cnx.close()
 
 #	plt.ylabel("Frequency in Hz.")
