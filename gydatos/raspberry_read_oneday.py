@@ -34,7 +34,7 @@ n = str(waveform0)
 print('Number of traces:',n,"\n")
 for tr in waveform0:
      tr.data = np.require(tr.data, dtype=np.int32)
-waveform0.write('/home/ndcuser/ShareData/'+strpnow.replace(" ","")+'.mseed',format='MSEED')
+waveform0.write('/home/ShareData/'+strpnow.replace(" ","")+'.mseed',format='MSEED')
 fname='OneDay'
 startplot=starttime
 waveform0.plot(starttime=startplot,outfile=fname+'_0.png')
